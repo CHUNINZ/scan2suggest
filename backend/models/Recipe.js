@@ -178,24 +178,24 @@ recipeSchema.pre('save', function(next) {
 
 // Virtual for average rating
 recipeSchema.virtual('averageRating').get(function() {
-  if (this.ratings.length === 0) return 0;
+  if (!this.ratings || this.ratings.length === 0) return 0;
   const sum = this.ratings.reduce((acc, rating) => acc + rating.rating, 0);
   return Math.round((sum / this.ratings.length) * 10) / 10;
 });
 
 // Virtual for likes count
 recipeSchema.virtual('likesCount').get(function() {
-  return this.likes.length;
+  return this.likes ? this.likes.length : 0;
 });
 
 // Virtual for bookmarks count
 recipeSchema.virtual('bookmarksCount').get(function() {
-  return this.bookmarks.length;
+  return this.bookmarks ? this.bookmarks.length : 0;
 });
 
 // Virtual for ratings count
 recipeSchema.virtual('ratingsCount').get(function() {
-  return this.ratings.length;
+  return this.ratings ? this.ratings.length : 0;
 });
 
 // Ensure virtual fields are serialized

@@ -9,7 +9,7 @@ const router = express.Router();
 // @route   POST /api/upload/profile
 // @desc    Upload profile image
 // @access  Private
-router.post('/profile', auth, upload.single('profileImage'), async (req, res) => {
+router.post('/profile', auth, upload.diskUpload.single('profileImage'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -38,7 +38,7 @@ router.post('/profile', auth, upload.single('profileImage'), async (req, res) =>
 // @route   POST /api/upload/recipe
 // @desc    Upload recipe images
 // @access  Private
-router.post('/recipe', auth, upload.array('recipeImages', 5), async (req, res) => {
+router.post('/recipe', auth, upload.diskUpload.array('recipeImages', 5), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({
@@ -71,7 +71,7 @@ router.post('/recipe', auth, upload.array('recipeImages', 5), async (req, res) =
 // @route   POST /api/upload/scan
 // @desc    Upload scan image
 // @access  Private
-router.post('/scan', auth, upload.single('scanImage'), async (req, res) => {
+router.post('/scan', auth, upload.diskUpload.single('scanImage'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({

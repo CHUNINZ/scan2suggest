@@ -7,8 +7,6 @@ class EmailService {
   }
 
   initializeTransporter() {
-    // For development, we'll use Gmail SMTP
-    // In production, you should use a proper email service like SendGrid, AWS SES, etc.
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -17,7 +15,7 @@ class EmailService {
       }
     });
 
-    // Fallback to Ethereal for testing if no Gmail credentials
+    
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
       console.log('⚠️  No email credentials found. Using test mode (codes will be logged to console).');
       this.transporter = null;
@@ -26,7 +24,6 @@ class EmailService {
 
   async sendPasswordResetCode(email, code) {
     try {
-      // If no transporter configured, just log the code (development mode)
       if (!this.transporter) {
         console.log(`📧 [EMAIL SERVICE] Password reset code for ${email}: ${code}`);
         console.log(`📧 [EMAIL SERVICE] To enable real emails, set EMAIL_USER and EMAIL_PASS in .env`);
@@ -81,12 +78,10 @@ class EmailService {
 
     } catch (error) {
       console.error('📧 [EMAIL SERVICE] Error sending password reset email:', error);
-      
-      // Fallback to console logging if email fails
       console.log(`📧 [EMAIL SERVICE] FALLBACK - Password reset code for ${email}: ${code}`);
       
       return { 
-        success: true, // Still return success so the flow continues
+        success: true, 
         message: 'Email service unavailable, code logged to console',
         fallback: true 
       };
@@ -166,7 +161,7 @@ class EmailService {
     }
   }
 
-  // Legacy method for backward compatibility
+  
   async sendVerificationCode(email, code) {
     return this.sendPasswordResetCode(email, code);
   }

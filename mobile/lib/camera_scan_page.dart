@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'dart:async';
-import 'scan_results_page.dart';
+import 'package:image_picker/image_picker.dart';
+import 'services/api_service.dart';
+import 'enhanced_scan_results_page.dart';
+import 'ingredient_scan_results_page.dart';
 
 class CameraScanPage extends StatefulWidget {
   final String scanType; // 'Food' or 'Ingredient'
@@ -170,6 +174,29 @@ class _CameraScanPageState extends State<CameraScanPage>
     );
   }
 
+  void _showAuthenticationRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Login Required'),
+        content: const Text('You need to be logged in to scan images. Please log in to your account first.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pop(context); // Go back to previous screen
+            },
+            child: const Text('Go to Login'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _startAutoScanning() {
     // Simulate real-time ingredient detection
     if (widget.scanType == 'Ingredient') {
@@ -247,15 +274,98 @@ class _CameraScanPageState extends State<CameraScanPage>
     HapticFeedback.lightImpact();
   }
 
-  void _openGallery() {
+  void _openGallery() async {
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Gallery access would be implemented here'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
-      ),
-    );
+    
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+      
+      if (image != null) {
+        // Process the selected image for scanning
+        await _processGalleryImage(File(image.path));
+      }
+    } catch (e) {
+      _showError('Error accessing gallery: $e');
+    }
+  }
+  
+  Future<void> _processGalleryImage(File imageFile) async {
+    setState(() {
+      _isScanning = true;
+      _detectedItems.clear();
+    });
+
+    try {
+      print('🔄 Processing gallery image...');
+      print('📂 Image path: ${imageFile.path}');
+      print('📊 Image size: ${await imageFile.length()} bytes');
+      
+      // Initialize token first
+      await ApiService.initializeToken();
+      
+      // Test connection to ensure backend is reachable
+      final isConnected = await ApiService.testConnection();
+      if (!isConnected) {
+        throw Exception('Cannot connect to backend server. Check your network connection.');
+      }
+      
+      // Call real AI detection API
+      final scanType = widget.scanType.toLowerCase();
+      final result = await ApiService.analyzeImage(
+        imageFile: imageFile,
+        scanType: scanType,
+      );
+
+      setState(() {
+        _isScanning = false;
+      });
+
+      HapticFeedback.heavyImpact();
+
+      // Extract detected item names from API response
+      List<String> detectedItems = [];
+      if (result['detectedItems'] != null) {
+        for (var item in result['detectedItems']) {
+          detectedItems.add(item['name'] ?? 'Unknown item');
+        }
+      }
+
+      // Navigate to results based on scan type
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => widget.scanType.toLowerCase() == 'ingredient'
+              ? IngredientScanResultsPage(imageFile: imageFile)
+              : EnhancedScanResultsPage(
+                  imageFile: imageFile,
+                  scanType: widget.scanType,
+                ),
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _isScanning = false;
+      });
+      
+      print('❌ Gallery scan error: $e');
+      
+      String errorMessage = 'Error scanning image';
+      if (e.toString().contains('Network') || e.toString().contains('connect')) {
+        errorMessage = 'Network error. Check your connection and try again.';
+      } else if (e.toString().contains('401') || e.toString().contains('Unauthorized')) {
+        errorMessage = 'Authentication required. Please log in to scan images.';
+        _showAuthenticationRequiredDialog();
+        return;
+      }
+      
+      _showError(errorMessage);
+    }
   }
 
   void _openManualEntry() {
@@ -285,19 +395,36 @@ class _CameraScanPageState extends State<CameraScanPage>
     HapticFeedback.mediumImpact();
     
     try {
-      // Capture image
-      final image = await _controller!.takePicture();
+      print('🔄 Starting scan process...');
       
-      // Simulate AI scanning process with progress
-      await Future.delayed(const Duration(seconds: 2));
-
-      // Generate detection results
-      List<String> detectedItems;
-      if (widget.scanType == 'Food') {
-        detectedItems = _simulateFoodDetection();
-      } else {
-        detectedItems = _simulateIngredientDetection();
+      // Initialize token first
+      print('🔑 Initializing authentication token...');
+      await ApiService.initializeToken();
+      
+      // Test connection to ensure backend is reachable
+      print('🌐 Testing backend connection...');
+      final isConnected = await ApiService.testConnection();
+      if (!isConnected) {
+        print('❌ Backend connection failed');
+        throw Exception('Cannot connect to backend server. Check your network connection.');
       }
+      print('✅ Backend connection successful');
+      
+      // Capture image
+      print('📸 Capturing image...');
+      final image = await _controller!.takePicture();
+      final imageFile = File(image.path);
+      print('✅ Image captured: ${image.path}');
+      print('📊 Image file size: ${await imageFile.length()} bytes');
+      
+      // Call real AI detection API
+      final scanType = widget.scanType.toLowerCase(); // Convert 'Food' to 'food', 'Ingredient' to 'ingredient'
+      print('🤖 Calling AI detection API with scanType: $scanType');
+      final result = await ApiService.analyzeImage(
+        imageFile: imageFile,
+        scanType: scanType,
+      );
+      print('✅ AI detection API call successful');
 
       setState(() {
         _isScanning = false;
@@ -305,50 +432,72 @@ class _CameraScanPageState extends State<CameraScanPage>
 
       HapticFeedback.heavyImpact();
 
-      // Navigate to results page
+      // Extract detected item names from API response
+      List<String> detectedItems = [];
+      if (result['detectedItems'] != null) {
+        detectedItems = (result['detectedItems'] as List)
+            .map((item) => item['name'].toString())
+            .toList();
+      }
+
+      // If no items detected, show appropriate message
+      if (detectedItems.isEmpty) {
+        detectedItems = ['No ${scanType}s detected. Try adjusting lighting or angle.'];
+      }
+
+      // Navigate to results page based on scan type
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => ScanResultsPage(
-            scanType: widget.scanType,
-            detectedItems: detectedItems,
-          ),
+          builder: (context) => widget.scanType.toLowerCase() == 'ingredient'
+              ? IngredientScanResultsPage(imageFile: imageFile)
+              : EnhancedScanResultsPage(
+                  imageFile: imageFile,
+                  scanType: widget.scanType,
+                ),
         ),
       );
     } catch (e) {
       setState(() {
         _isScanning = false;
       });
-      _showError('Error capturing image: $e');
+      
+      print('❌ Scan error occurred: $e');
+      print('❌ Error type: ${e.runtimeType}');
+      print('❌ Full error details: ${e.toString()}');
+      
+      // Show more specific error messages
+      String errorMessage = 'Error scanning image';
+      if (e.toString().contains('Network') || e.toString().contains('connect')) {
+        errorMessage = 'Network error. Check your connection and try again.';
+      } else if (e.toString().contains('timeout')) {
+        errorMessage = 'Scan timed out. Please try again.';
+      } else if (e.toString().contains('401') || e.toString().contains('Unauthorized')) {
+        errorMessage = 'Authentication required. Please log in to scan images.';
+      } else if (e.toString().contains('ApiException')) {
+        errorMessage = e.toString();
+      } else if (e.toString().contains('backend server')) {
+        errorMessage = 'Cannot reach server. Check network and try again.';
+      } else if (e.toString().contains('SocketException')) {
+        errorMessage = 'Network connection failed. Check WiFi and server IP.';
+      } else if (e.toString().contains('FormatException')) {
+        errorMessage = 'Invalid server response. Check backend configuration.';
+      }
+      
+      print('📱 Showing error to user: $errorMessage');
+      _showError(errorMessage);
+      
+      // Show authentication dialog if needed
+      if (e.toString().contains('401') || e.toString().contains('Unauthorized')) {
+        _showAuthenticationRequiredDialog();
+        return;
+      }
+      
+      // For other errors, just show the error message
+      // User can try scanning again
     }
   }
 
-  List<String> _simulateFoodDetection() {
-    final foods = [
-      'Chicken Adobo',
-      'Sinigang na Baboy',
-      'Kare-Kare',
-      'Lechon Kawali',
-      'Ginataang Kalabasa',
-      'Pancit Canton',
-      'Lumpia Shanghai',
-      'Bibingka',
-      'Halo-Halo',
-      'Taho'
-    ];
-    return [foods[DateTime.now().millisecond % foods.length]];
-  }
-
-  List<String> _simulateIngredientDetection() {
-    final ingredients = [
-      ['Chicken', 'Soy Sauce', 'Vinegar'],
-      ['Pork Belly', 'Onion', 'Tomato'],
-      ['Bell Pepper', 'Garlic', 'Ginger'],
-      ['Coconut Milk', 'Squash', 'String Beans'],
-      ['Rice', 'Egg', 'Vegetables']
-    ];
-    return ingredients[DateTime.now().millisecond % ingredients.length];
-  }
 
   @override
   Widget build(BuildContext context) {

@@ -25,6 +25,9 @@ dependencies:
 
   # Image processing
   image_picker: ^1.0.4
+  
+  # Time formatting
+  timeago: ^3.6.0
 
 dev_dependencies:
   flutter_test:

@@ -140,12 +140,12 @@ userSchema.methods.getPublicProfile = function() {
 
 // Virtual for followers count
 userSchema.virtual('followersCount').get(function() {
-  return this.followers.length;
+  return this.followers ? this.followers.length : 0;
 });
 
 // Virtual for following count
 userSchema.virtual('followingCount').get(function() {
-  return this.following.length;
+  return this.following ? this.following.length : 0;
 });
 
 // Ensure virtual fields are serialized

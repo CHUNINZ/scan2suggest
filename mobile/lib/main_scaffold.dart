@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'camera_scan_page.dart';
 import 'app_theme.dart';
+import 'services/api_service.dart';
+import 'dart:async';
 
 class MainScaffold extends StatefulWidget {
   final Widget body;
@@ -35,6 +37,10 @@ class _MainScaffoldState extends State<MainScaffold>
   late AnimationController _fadeAnimationController;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
+  
+  // Real-time notification count
+  int _unreadNotificationCount = 0;
+  Timer? _notificationTimer;
 
   @override
   void initState() {
@@ -65,12 +71,41 @@ class _MainScaffoldState extends State<MainScaffold>
       parent: _fadeAnimationController,
       curve: Curves.easeOut,
     ));
+    
+    // Load initial notification count
+    _loadNotificationCount();
+    
+    // Poll for updates every 30 seconds
+    _notificationTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _loadNotificationCount();
+    });
+  }
+  
+  Future<void> _loadNotificationCount() async {
+    try {
+      final response = await ApiService.getNotifications(
+        page: 1,
+        limit: 100,
+        unreadOnly: true, // Only get unread notifications
+      );
+      
+      if (response['success'] == true && mounted) {
+        final notifications = response['notifications'] as List? ?? [];
+        setState(() {
+          _unreadNotificationCount = notifications.length;
+        });
+      }
+    } catch (e) {
+      // Silently fail - don't disrupt user experience
+      print('❌ Failed to load notification count: $e');
+    }
   }
 
   @override
   void dispose() {
     _overlayAnimationController.dispose();
     _fadeAnimationController.dispose();
+    _notificationTimer?.cancel();
     super.dispose();
   }
 
@@ -291,7 +326,9 @@ class _MainScaffoldState extends State<MainScaffold>
                         _buildNavItem(0, Icons.home, Icons.home_outlined, 'Home'),
                         _buildNavItem(1, Icons.cloud_upload, Icons.cloud_upload_outlined, 'Upload'),
                         const SizedBox(width: 64), // Space for FAB
-                        _buildNavItemWithBadge(3, Icons.notifications, Icons.notifications_none, 'Notifications', '3'),
+                        _unreadNotificationCount > 0
+                            ? _buildNavItemWithBadge(3, Icons.notifications, Icons.notifications_none, 'Notifications', _unreadNotificationCount.toString())
+                            : _buildNavItem(3, Icons.notifications, Icons.notifications_outlined, 'Notifications'),
                         _buildNavItem(4, Icons.person, Icons.person_outline, 'Profile'),
                       ],
                     ),
@@ -367,30 +404,31 @@ class _MainScaffoldState extends State<MainScaffold>
         return Stack(
           children: [
             const Icon(Icons.notifications, color: AppTheme.primaryDarkGreen, size: 28),
-            Positioned(
-              right: 0,
-              top: 0,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: AppTheme.error,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                constraints: const BoxConstraints(
-                  minWidth: 16,
-                  minHeight: 16,
-                ),
-                child: const Text(
-                  '3',
-                  style: TextStyle(
-                    color: AppTheme.surfaceWhite,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
+            if (_unreadNotificationCount > 0)
+              Positioned(
+                right: 0,
+                top: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: AppTheme.error,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  textAlign: TextAlign.center,
+                  constraints: const BoxConstraints(
+                    minWidth: 16,
+                    minHeight: 16,
+                  ),
+                  child: Text(
+                    _unreadNotificationCount > 99 ? '99+' : _unreadNotificationCount.toString(),
+                    style: const TextStyle(
+                      color: AppTheme.surfaceWhite,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ),
-            ),
           ],
         );
       case 4:

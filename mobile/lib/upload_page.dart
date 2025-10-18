@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import 'camera_scan_page.dart';
 import 'app_theme.dart';
+import 'services/api_service.dart';
 
 class UploadPage extends StatefulWidget {
   const UploadPage({super.key});
@@ -20,6 +23,13 @@ class _UploadPageState extends State<UploadPage> with TickerProviderStateMixin {
   double _durationSliderValue = 2.0; // Index for slider (0-4 for 5 options)
   final List<String> _ingredients = [];
   final List<String> _steps = [];
+  File? _selectedImage;
+  final ImagePicker _picker = ImagePicker();
+  
+  // Form validation
+  bool _showValidationErrors = false;
+  final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
   
   // Show success overlay
   bool _isSuccessOverlayVisible = false;
@@ -119,6 +129,8 @@ class _UploadPageState extends State<UploadPage> with TickerProviderStateMixin {
     _celebrationController.dispose();
     _shareButtonController.dispose();
     _pageController.dispose();
+    _nameController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -138,6 +150,145 @@ class _UploadPageState extends State<UploadPage> with TickerProviderStateMixin {
       int index = value.round().clamp(0, _durationOptions.length - 1);
       _cookingDuration = _durationOptions[index]['value'];
     });
+  }
+
+  String? _validateStep1() {
+    if (_foodName.trim().isEmpty) {
+      return 'Please enter a recipe name';
+    }
+    if (_foodName.trim().length < 3) {
+      return 'Recipe name must be at least 3 characters';
+    }
+    if (_description.trim().isEmpty) {
+      return 'Please enter a description';
+    }
+    if (_description.trim().length < 10) {
+      return 'Description must be at least 10 characters (current: ${_description.trim().length})';
+    }
+    return null;
+  }
+
+  String? _validateStep2() {
+    if (_ingredients.isEmpty) {
+      return 'Please add at least one ingredient';
+    }
+    if (_steps.isEmpty) {
+      return 'Please add at least one cooking step';
+    }
+    return null;
+  }
+
+  bool _canProceedToStep2() {
+    return _validateStep1() == null;
+  }
+
+  bool _canSubmitRecipe() {
+    return _validateStep1() == null && _validateStep2() == null;
+  }
+
+  Future<void> _submitRecipe() async {
+    setState(() {
+      _showValidationErrors = true;
+    });
+
+    // Validate Step 1
+    final step1Error = _validateStep1();
+    if (step1Error != null) {
+      _showErrorSnackbar(step1Error);
+      // Go back to step 1
+      _pageController.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      setState(() => _currentStep = 0);
+      return;
+    }
+
+    // Validate Step 2
+    final step2Error = _validateStep2();
+    if (step2Error != null) {
+      _showErrorSnackbar(step2Error);
+      return;
+    }
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(
+          color: AppTheme.primaryDarkGreen,
+        ),
+      ),
+    );
+
+    try {
+      // Prepare ingredients list (match backend schema)
+      final ingredientsList = _ingredients.map((ing) => {
+        'name': ing,
+        'amount': '1', // Required field in backend
+        'unit': 'piece',
+      }).toList();
+
+      // Prepare instructions list (match backend schema)
+      final instructionsList = _steps.asMap().entries.map((entry) => {
+        'step': entry.key + 1, // Required field in backend (number)
+        'instruction': entry.value, // Required field in backend (string)
+      }).toList();
+
+      // Calculate prep and cook time (simple split for now)
+      final totalDuration = int.parse(_cookingDuration);
+      final prepTime = (totalDuration * 0.3).round();
+      final cookTime = totalDuration - prepTime;
+
+      // Submit recipe
+      final result = await ApiService.createRecipe(
+        title: _foodName.trim(),
+        description: _description.trim(),
+        category: 'main_course', // Default category
+        difficulty: 'medium', // Default difficulty
+        prepTime: prepTime,
+        cookTime: cookTime,
+        servings: 4, // Default servings
+        ingredients: ingredientsList,
+        instructions: instructionsList,
+        tags: ['filipino', 'homemade'],
+        images: _selectedImage != null ? [_selectedImage!] : null,
+      );
+
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+
+      if (result['success'] == true) {
+        _showSuccessOverlay();
+      } else {
+        _showErrorSnackbar(result['message'] ?? 'Failed to upload recipe');
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+      _showErrorSnackbar('Error uploading recipe: $e');
+    }
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
   }
 
   void _showSuccessOverlay() {
@@ -177,7 +328,31 @@ class _UploadPageState extends State<UploadPage> with TickerProviderStateMixin {
       _durationSliderValue = 2.0;
       _ingredients.clear();
       _steps.clear();
+      _selectedImage = null;
+      _showValidationErrors = false;
+      _nameController.clear();
+      _descriptionController.clear();
     });
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 85,
+      );
+      
+      if (image != null) {
+        setState(() {
+          _selectedImage = File(image.path);
+        });
+        HapticFeedback.lightImpact();
+      }
+    } catch (e) {
+      _showErrorSnackbar('Failed to pick image: $e');
+    }
   }
 
   void _uploadAnother() {
@@ -446,32 +621,19 @@ Made with Start Cooking App 🇵🇭
           
           // Photo upload section
           GestureDetector(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Row(
-                    children: [
-                      Icon(Icons.camera_alt, color: Colors.white),
-                      SizedBox(width: 8),
-                      Text('Image picker would open here'),
-                    ],
-                  ),
-                  backgroundColor: AppTheme.primaryDarkGreen,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              );
-            },
+            onTap: _pickImage,
             child: Container(
               width: double.infinity,
               height: 200,
               decoration: BoxDecoration(
                 color: AppTheme.surfaceWhite,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.textDisabled),
+                border: Border.all(
+                  color: _selectedImage != null 
+                      ? AppTheme.primaryDarkGreen 
+                      : AppTheme.textDisabled,
+                  width: _selectedImage != null ? 2 : 1,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.05),
@@ -480,39 +642,79 @@ Made with Start Cooking App 🇵🇭
                   ),
                 ],
               ),
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.add_a_photo, size: 50, color: AppTheme.textSecondary),
-                  SizedBox(height: 16),
-                  Text(
-                    'Add Filipino Dish Photo',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary,
+              child: _selectedImage != null
+                  ? Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Image.file(
+                            _selectedImage!,
+                            width: double.infinity,
+                            height: 200,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white),
+                              onPressed: () {
+                                setState(() {
+                                  _selectedImage = null;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_a_photo, size: 50, color: AppTheme.textSecondary),
+                        SizedBox(height: 16),
+                        Text(
+                          'Add Filipino Dish Photo',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Tap to select from gallery',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    '(up to 12 MB)',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
             ),
           ),
           const SizedBox(height: 24),
           
           // Dish name field
           TextField(
-            decoration: const InputDecoration(
-              labelText: 'Filipino Dish Name',
+            controller: _nameController,
+            decoration: InputDecoration(
+              labelText: 'Filipino Dish Name *',
               hintText: 'e.g., Adobo, Sinigang, Kare-Kare',
-              prefixIcon: Icon(Icons.restaurant, color: AppTheme.primaryDarkGreen),
+              helperText: 'Minimum 3 characters',
+              errorText: _showValidationErrors && _foodName.trim().length < 3 && _foodName.isNotEmpty
+                  ? 'Name must be at least 3 characters'
+                  : null,
+              prefixIcon: const Icon(Icons.restaurant, color: AppTheme.primaryDarkGreen),
+              suffixIcon: _foodName.trim().length >= 3
+                  ? const Icon(Icons.check_circle, color: Colors.green)
+                  : null,
               filled: true,
               fillColor: AppTheme.surfaceWhite,
             ),
@@ -526,11 +728,22 @@ Made with Start Cooking App 🇵🇭
           
           // Description field
           TextField(
+            controller: _descriptionController,
             maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Description',
-              hintText: 'Tell us about this Filipino dish and its origins',
-              prefixIcon: Icon(Icons.description, color: AppTheme.primaryDarkGreen),
+            decoration: InputDecoration(
+              labelText: 'Description *',
+              hintText: 'Tell us about this Filipino dish and its origins...',
+              helperText: 'Minimum 10 characters (${_description.trim().length}/10)',
+              helperStyle: TextStyle(
+                color: _description.trim().length >= 10 ? Colors.green : AppTheme.textSecondary,
+              ),
+              errorText: _showValidationErrors && _description.trim().length < 10 && _description.isNotEmpty
+                  ? 'Description must be at least 10 characters'
+                  : null,
+              prefixIcon: const Icon(Icons.description, color: AppTheme.primaryDarkGreen),
+              suffixIcon: _description.trim().length >= 10
+                  ? const Icon(Icons.check_circle, color: Colors.green)
+                  : null,
               filled: true,
               fillColor: AppTheme.surfaceWhite,
             ),
@@ -547,11 +760,11 @@ Made with Start Cooking App 🇵🇭
         
           const SizedBox(height: 32),
           
-          // Next button
+          // Next button with validation
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {
+              onPressed: _canProceedToStep2() ? () {
                 if (_currentStep < 1) {
                   HapticFeedback.selectionClick();
                   setState(() {
@@ -562,23 +775,37 @@ Made with Start Cooking App 🇵🇭
                     curve: Curves.easeInOut,
                   );
                 }
+              } : () {
+                // Show what's missing
+                setState(() {
+                  _showValidationErrors = true;
+                });
+                final error = _validateStep1();
+                if (error != null) {
+                  _showErrorSnackbar(error);
+                }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryDarkGreen,
+                backgroundColor: _canProceedToStep2() 
+                    ? AppTheme.primaryDarkGreen 
+                    : AppTheme.textDisabled,
                 foregroundColor: AppTheme.surfaceWhite,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.arrow_forward, size: 20),
-                  SizedBox(width: 8),
+                  Icon(
+                    _canProceedToStep2() ? Icons.arrow_forward : Icons.error_outline,
+                    size: 20
+                  ),
+                  const SizedBox(width: 8),
                   Text(
-                    'Next Step',
-                    style: TextStyle(
+                    _canProceedToStep2() ? 'Next Step' : 'Complete Required Fields',
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
@@ -647,58 +874,65 @@ Made with Start Cooking App 🇵🇭
           ),
           const SizedBox(height: 24),
           
-          // Duration options row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: _durationOptions.asMap().entries.map((entry) {
-              int index = entry.key;
-              var option = entry.value;
-              bool isSelected = _durationSliderValue.round() == index;
-              
-              return GestureDetector(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  setState(() {
-                    _durationSliderValue = index.toDouble();
-                    _cookingDuration = option['value'];
-                  });
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppTheme.primaryDarkGreen : Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isSelected ? AppTheme.primaryDarkGreen : AppTheme.textDisabled,
-                      width: 2,
+          // Duration options row - Responsive with SingleChildScrollView
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _durationOptions.asMap().entries.map((entry) {
+                int index = entry.key;
+                var option = entry.value;
+                bool isSelected = _durationSliderValue.round() == index;
+                
+                return Padding(
+                  padding: EdgeInsets.only(
+                    right: index < _durationOptions.length - 1 ? 8.0 : 0,
+                  ),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _durationSliderValue = index.toDouble();
+                        _cookingDuration = option['value'];
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppTheme.primaryDarkGreen : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected ? AppTheme.primaryDarkGreen : AppTheme.textDisabled,
+                          width: 2,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            option['label'],
+                            style: TextStyle(
+                              color: isSelected ? AppTheme.surfaceWhite : AppTheme.textPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            option['description'],
+                            style: TextStyle(
+                              color: isSelected ? AppTheme.surfaceWhite.withOpacity(0.8) : AppTheme.textSecondary,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        option['label'],
-                        style: TextStyle(
-                          color: isSelected ? AppTheme.surfaceWhite : AppTheme.textPrimary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        option['description'],
-                        style: TextStyle(
-                          color: isSelected ? AppTheme.surfaceWhite.withOpacity(0.8) : AppTheme.textSecondary,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
+                );
+              }).toList(),
+            ),
           ),
           
           const SizedBox(height: 24),
@@ -774,14 +1008,50 @@ Made with Start Cooking App 🇵🇭
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Add ingredients and cooking instructions',
             style: TextStyle(
               fontSize: 16,
               color: AppTheme.textSecondary,
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 16),
+          
+          // Requirements indicator
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _canSubmitRecipe() 
+                  ? Colors.green.withOpacity(0.1) 
+                  : Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _canSubmitRecipe() ? Colors.green : Colors.orange,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _canSubmitRecipe() ? Icons.check_circle : Icons.info_outline,
+                  color: _canSubmitRecipe() ? Colors.green : Colors.orange,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _canSubmitRecipe()
+                        ? 'All requirements met! Ready to upload.'
+                        : 'Required: At least 1 ingredient and 1 step',
+                    style: TextStyle(
+                      color: _canSubmitRecipe() ? Colors.green[800] : Colors.orange[800],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
           
           // Ingredients section
           _buildIngredientsSection(),
@@ -823,12 +1093,14 @@ Made with Start Cooking App 🇵🇭
                 child: ElevatedButton.icon(
                   onPressed: () {
                     HapticFeedback.mediumImpact();
-                    _showSuccessOverlay();
+                    _submitRecipe();
                   },
-                  icon: const Icon(Icons.upload),
-                  label: const Text('Upload Recipe'),
+                  icon: Icon(_canSubmitRecipe() ? Icons.upload : Icons.error_outline),
+                  label: Text(_canSubmitRecipe() ? 'Upload Recipe' : 'Add Required Fields'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryDarkGreen,
+                    backgroundColor: _canSubmitRecipe() 
+                        ? AppTheme.primaryDarkGreen 
+                        : AppTheme.textDisabled,
                     foregroundColor: AppTheme.surfaceWhite,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -1073,7 +1345,10 @@ Made with Start Cooking App 🇵🇭
           position: _modalSlideAnimation,
           child: Center(
             child: Container(
-              margin: const EdgeInsets.all(24),
+              margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
               decoration: BoxDecoration(
                 color: AppTheme.surfaceWhite,
                 borderRadius: BorderRadius.circular(24),
@@ -1085,12 +1360,14 @@ Made with Start Cooking App 🇵🇭
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   // Header with share button
                   Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(16),
                     decoration: const BoxDecoration(
                       borderRadius: BorderRadius.only(
                         topLeft: Radius.circular(24),
@@ -1158,8 +1435,8 @@ Made with Start Cooking App 🇵🇭
                                   return Transform.scale(
                                     scale: _celebrationPulseAnimation.value,
                                     child: Container(
-                                      width: 120,
-                                      height: 120,
+                                      width: 90,
+                                      height: 90,
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(
                                           colors: [
@@ -1178,7 +1455,7 @@ Made with Start Cooking App 🇵🇭
                                       child: const Center(
                                         child: Icon(
                                           Icons.check_circle,
-                                          size: 60,
+                                          size: 48,
                                           color: AppTheme.success,
                                         ),
                                       ),
@@ -1190,12 +1467,12 @@ Made with Start Cooking App 🇵🇭
                           },
                         ),
                         
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
                         
                         // Recipe name display
                         if (_foodName.isNotEmpty)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
                               color: AppTheme.primaryDarkGreen.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
@@ -1206,7 +1483,7 @@ Made with Start Cooking App 🇵🇭
                             child: Text(
                               _foodName,
                               style: const TextStyle(
-                                fontSize: 18,
+                                fontSize: 16,
                                 fontWeight: FontWeight.bold,
                                 color: AppTheme.primaryDarkGreen,
                               ),
@@ -1214,32 +1491,32 @@ Made with Start Cooking App 🇵🇭
                             ),
                           ),
                         
-                        if (_foodName.isNotEmpty) const SizedBox(height: 16),
+                        if (_foodName.isNotEmpty) const SizedBox(height: 12),
                         
                         // Success message
                         const Text(
                           'Recipe uploaded successfully!',
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.w600,
                             color: AppTheme.textPrimary,
                           ),
                           textAlign: TextAlign.center,
                         ),
                         
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         
                         const Text(
-                          'Your delicious Filipino recipe is now part of our community. Share it with friends and family!',
+                          'Your delicious Filipino recipe is now part of our community!',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 15,
+                            fontSize: 13,
                             color: AppTheme.textSecondary,
-                            height: 1.4,
+                            height: 1.3,
                           ),
                         ),
                         
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 20),
                         
                         // Recipe stats
                         Container(
@@ -1283,14 +1560,14 @@ Made with Start Cooking App 🇵🇭
                           ),
                         ),
                         
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 20),
                         
                         // Upload Another button
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
                             onPressed: _uploadAnother,
-                            icon: const Icon(Icons.add_circle_outline),
+                            icon: const Icon(Icons.add_circle_outline, size: 18),
                             label: const Text('Upload Another Recipe'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppTheme.primaryDarkGreen,
@@ -1298,29 +1575,29 @@ Made with Start Cooking App 🇵🇭
                                 color: AppTheme.primaryDarkGreen,
                                 width: 2,
                               ),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                           ),
                         ),
                         
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         
                         // Back to Home button - FIXED VERSION
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
                             onPressed: _navigateToHome,
-                            icon: const Icon(Icons.home),
+                            icon: const Icon(Icons.home, size: 18),
                             label: const Text('Back to Home'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppTheme.primaryDarkGreen,
                               foregroundColor: AppTheme.surfaceWhite,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               elevation: 4,
                               shadowColor: AppTheme.primaryDarkGreen.withOpacity(0.3),
@@ -1328,11 +1605,12 @@ Made with Start Cooking App 🇵🇭
                           ),
                         ),
                         
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
                       ],
                     ),
                   ),
                 ],
+                ),
               ),
             ),
           ),

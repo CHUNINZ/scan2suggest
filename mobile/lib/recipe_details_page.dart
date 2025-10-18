@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'main_scaffold.dart';
+import 'package:flutter/services.dart';
+import 'config/api_config.dart';
+import 'services/api_service.dart';
 
 class RecipeDetailsPage extends StatefulWidget {
   final Map<String, dynamic> recipe;
@@ -11,40 +13,315 @@ class RecipeDetailsPage extends StatefulWidget {
 }
 
 class _RecipeDetailsPageState extends State<RecipeDetailsPage> {
-  bool _isLiked = false;
-  int _likes = 273;
+  late bool _isLiked;
+  late bool _isBookmarked;
+  late int _likesCount;
+  bool _isLoadingLike = false;
+  bool _isLoadingBookmark = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    // Initialize from recipe data
+    _isLiked = widget.recipe['isLiked'] ?? false;
+    _isBookmarked = widget.recipe['isBookmarked'] ?? false;
+    _likesCount = _getLikesCount();
+  }
+  
+  // Get real likes count from recipe data (handle both 'likes' and 'likesCount')
+  int _getLikesCount() {
+    final likesValue = widget.recipe['likesCount'] ?? widget.recipe['likes'] ?? 0;
+    // Ensure it's an int, handle both int and double
+    if (likesValue is int) return likesValue;
+    if (likesValue is double) return likesValue.toInt();
+    if (likesValue is String) return int.tryParse(likesValue) ?? 0;
+    return 0;
+  }
+  
+  // Track checked ingredients
+  final Set<int> _checkedIngredients = {};
 
-  // Sample ingredients and steps - in a real app, these would come from the recipe data
-  final List<Map<String, dynamic>> _ingredients = [
-    {'name': '4 Eggs', 'checked': false},
-    {'name': '1/2 Cup Butter', 'checked': false},
-    {'name': '1/4 Cup Cacao Powder', 'checked': false},
-    {'name': '2 Tbsp Maca Powder', 'checked': false},
-    {'name': '1/2 Cup Chopped Walnuts', 'checked': false},
-    {'name': '1 Cup Coconut Milk', 'checked': false},
-    {'name': '2 Tbsp Honey', 'checked': false},
-  ];
+  // Get ingredients from recipe data
+  List<Map<String, dynamic>> get _ingredients {
+    final ingredientsList = widget.recipe['ingredients'] as List<dynamic>? ?? [];
+    return ingredientsList.asMap().entries.map((entry) {
+      final ing = entry.value;
+      final index = entry.key;
+      return {
+        'name': ing is String ? ing : (ing['name'] ?? 'Unknown ingredient'),
+        'checked': _checkedIngredients.contains(index),
+      };
+    }).toList();
+  }
 
-  final List<String> _steps = [
-    'Heat coconut milk in a saucepan over medium heat. Add cacao powder and maca powder, whisking until smooth.',
-    'In a separate bowl, beat eggs and gradually add the warm milk mixture while whisking continuously.',
-    'Add butter and honey to the mixture, stirring until butter is completely melted.',
-    'Fold in the chopped walnuts gently to distribute evenly throughout the mixture.',
-    'Pour into serving bowls and refrigerate for at least 2 hours before serving.',
-    'Garnish with additional walnuts and a drizzle of honey if desired. Serve chilled and enjoy your healthy treat!'
-  ];
+  // Get steps from recipe data
+  List<String> get _steps {
+    final stepsList = widget.recipe['steps'] as List<dynamic>? ?? [];
+    if (stepsList.isEmpty) {
+      return ['No cooking instructions available for this recipe.'];
+    }
+    return stepsList.map((step) => step.toString()).toList();
+  }
 
-  void _toggleLike() {
+  Future<void> _toggleLike() async {
+    if (_isLoadingLike) return;
+    
     setState(() {
-      _isLiked = !_isLiked;
-      _likes += _isLiked ? 1 : -1;
+      _isLoadingLike = true;
     });
+    
+    HapticFeedback.lightImpact();
+    
+    try {
+      final recipeId = widget.recipe['id'] ?? widget.recipe['_id'];
+      if (recipeId == null) {
+        throw Exception('Recipe ID not found');
+      }
+      
+      final response = await ApiService.likeRecipe(recipeId.toString());
+      
+      if (response['success'] == true && mounted) {
+        setState(() {
+          _isLiked = response['isLiked'] ?? !_isLiked;
+          _likesCount = response['likesCount'] ?? _likesCount;
+          _isLoadingLike = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isLiked ? '❤️ Added to liked recipes!' : 'Removed from liked recipes'),
+            backgroundColor: _isLiked ? Colors.red : Colors.grey[700],
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        throw Exception(response['message'] ?? 'Failed to like recipe');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingLike = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString().replaceAll('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+  
+  Future<void> _toggleBookmark() async {
+    if (_isLoadingBookmark) return;
+    
+    setState(() {
+      _isLoadingBookmark = true;
+    });
+    
+    HapticFeedback.lightImpact();
+    
+    try {
+      final recipeId = widget.recipe['id'] ?? widget.recipe['_id'];
+      if (recipeId == null) {
+        throw Exception('Recipe ID not found');
+      }
+      
+      final response = await ApiService.bookmarkRecipe(recipeId.toString());
+      
+      if (response['success'] == true && mounted) {
+        setState(() {
+          _isBookmarked = response['isBookmarked'] ?? !_isBookmarked;
+          _isLoadingBookmark = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isBookmarked ? '🔖 Recipe saved!' : 'Recipe removed from saved'),
+            backgroundColor: _isBookmarked ? Colors.green : Colors.grey[700],
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        throw Exception(response['message'] ?? 'Failed to bookmark recipe');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingBookmark = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString().replaceAll('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+  
+  Future<void> _showRatingDialog() async {
+    int selectedRating = 0;
+    final TextEditingController reviewController = TextEditingController();
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Text(
+                'Rate this Recipe',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 24,
+                ),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'How would you rate this recipe?',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(5, (index) {
+                        return GestureDetector(
+                          onTap: () {
+                            setDialogState(() {
+                              selectedRating = index + 1;
+                            });
+                          },
+                          child: Icon(
+                            index < selectedRating ? Icons.star : Icons.star_border,
+                            color: Colors.amber,
+                            size: 40,
+                          ),
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: reviewController,
+                      maxLines: 3,
+                      maxLength: 200,
+                      decoration: InputDecoration(
+                        hintText: 'Write a review (optional)',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Colors.green, width: 2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: selectedRating > 0
+                      ? () => Navigator.of(context).pop(true)
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Submit',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    
+    if (result == true && selectedRating > 0) {
+      try {
+        final recipeId = widget.recipe['id'] ?? widget.recipe['_id'];
+        if (recipeId == null) {
+          throw Exception('Recipe ID not found');
+        }
+        
+        final response = await ApiService.rateRecipe(
+          recipeId: recipeId.toString(),
+          rating: selectedRating,
+          review: reviewController.text.trim().isNotEmpty ? reviewController.text.trim() : null,
+        );
+        
+        if (response['success'] == true && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⭐ Thank you for your rating!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else {
+          throw Exception(response['message'] ?? 'Failed to rate recipe');
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: ${e.toString().replaceAll('Exception: ', '')}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
+    
+    reviewController.dispose();
   }
 
   void _toggleIngredient(int index) {
     setState(() {
-      _ingredients[index]['checked'] = !_ingredients[index]['checked'];
+      if (_checkedIngredients.contains(index)) {
+        _checkedIngredients.remove(index);
+      } else {
+        _checkedIngredients.add(index);
+      }
     });
+  }
+
+  String? _getFullImageUrl(dynamic image) {
+    if (image == null || image.toString().isEmpty) return null;
+    
+    final imageStr = image.toString();
+    
+    // If it's already a full URL, return as is
+    if (imageStr.startsWith('http://') || imageStr.startsWith('https://')) {
+      return imageStr;
+    }
+    
+    // Otherwise, construct full URL from base URL
+    final baseUrl = ApiConfig.safeBaseUrl.replaceAll('/api', ''); // Remove /api suffix
+    return '$baseUrl$imageStr'; // imageStr should start with /uploads/...
   }
 
   @override
@@ -89,22 +366,46 @@ class _RecipeDetailsPageState extends State<RecipeDetailsPage> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.green.shade300, Colors.green.shade600],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.fastfood,
-                        size: 80,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+                  // Recipe Image or Gradient Background
+                  _getFullImageUrl(widget.recipe['image']) != null
+                      ? Image.network(
+                          _getFullImageUrl(widget.recipe['image'])!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.green.shade300, Colors.green.shade600],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.fastfood,
+                                  size: 80,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Colors.green.shade300, Colors.green.shade600],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              Icons.fastfood,
+                              size: 80,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
                   // Gradient overlay for better text visibility
                   Container(
                     decoration: BoxDecoration(
@@ -113,7 +414,7 @@ class _RecipeDetailsPageState extends State<RecipeDetailsPage> {
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black.withOpacity(0.3),
+                          Colors.black.withOpacity(0.5),
                         ],
                       ),
                     ),
@@ -237,7 +538,7 @@ class _RecipeDetailsPageState extends State<RecipeDetailsPage> {
                                   const Icon(Icons.favorite, color: Colors.white, size: 18),
                                   const SizedBox(width: 6),
                                   Text(
-                                    '$_likes Likes',
+                                    '$_likesCount Likes',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
@@ -419,28 +720,6 @@ class _RecipeDetailsPageState extends State<RecipeDetailsPage> {
                             ),
                           );
                         }).toList(),
-                        
-                        // Sample step image for the first step
-                        if (_steps.isNotEmpty)
-                          Container(
-                            margin: const EdgeInsets.only(left: 48, bottom: 20),
-                            height: 200,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              gradient: LinearGradient(
-                                colors: [Colors.green.shade200, Colors.green.shade400],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.image,
-                                size: 48,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -470,58 +749,70 @@ class _RecipeDetailsPageState extends State<RecipeDetailsPage> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: () {
-                  // Add to favorites functionality
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Recipe saved to favorites!'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                },
+                onPressed: _isLoadingBookmark ? null : _toggleBookmark,
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.green),
+                  side: BorderSide(color: _isBookmarked ? Colors.green : Colors.grey),
+                  backgroundColor: _isBookmarked ? Colors.green.withOpacity(0.1) : null,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text(
-                  'Save Recipe',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
+                child: _isLoadingBookmark
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.green,
+                        ),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+                            color: Colors.green,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _isBookmarked ? 'Saved' : 'Save',
+                            style: const TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: ElevatedButton(
-                onPressed: () {
-                  // Start cooking functionality
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Happy cooking! Enjoy your meal!'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                },
+                onPressed: _showRatingDialog,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
+                  backgroundColor: Colors.amber,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text(
-                  'Start Cooking',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.star, color: Colors.white, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Rate',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

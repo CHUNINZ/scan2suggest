@@ -92,6 +92,27 @@ class _ScanResultsPageState extends State<ScanResultsPage>
   }
 
   void _generateFoodResults() {
+    if (widget.detectedItems.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _commonIngredients = [];
+        _suggestedRecipes = [];
+      });
+      return;
+    }
+    
+    // Handle case where detectedItems contains error messages
+    if (widget.detectedItems.first.contains('failed') || 
+        widget.detectedItems.first.contains('error') ||
+        widget.detectedItems.first.contains('No ')) {
+      setState(() {
+        _isLoading = false;
+        _commonIngredients = [];
+        _suggestedRecipes = [];
+      });
+      return;
+    }
+    
     final String detectedFood = widget.detectedItems.first;
     
     // Enhanced ingredient mappings for different Filipino dishes
@@ -191,6 +212,14 @@ class _ScanResultsPageState extends State<ScanResultsPage>
   }
 
   void _generateIngredientResults() {
+    if (widget.detectedItems.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _suggestedRecipes = [];
+      });
+      return;
+    }
+    
     _suggestedRecipes = _getRecipesForIngredients(widget.detectedItems);
   }
 

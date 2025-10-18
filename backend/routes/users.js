@@ -98,7 +98,7 @@ router.put('/profile', auth, [
 // @route   POST /api/users/upload-avatar
 // @desc    Upload user avatar
 // @access  Private
-router.post('/upload-avatar', auth, upload.single('profileImage'), async (req, res) => {
+router.post('/upload-avatar', auth, upload.diskUpload.single('profileImage'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({

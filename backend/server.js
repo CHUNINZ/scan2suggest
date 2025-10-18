@@ -36,10 +36,12 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS configuration
+// CORS configuration - Allow all origins for mobile development
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:8080'],
-  credentials: true
+  origin: true, // Allow all origins
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Body parsing middleware
@@ -75,18 +77,17 @@ io.on('connection', (socket) => {
 app.set('io', io);
 
 // API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/recipes', recipeRoutes);
-app.use('/api/scan', scanRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/social', socialRoutes);
-app.use('/api/notifications', notificationRoutes);
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/recipes', require('./routes/recipes'));
+app.use('/api/scan', require('./routes/scan'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/social', require('./routes/social'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.status(200).json({ 
+    status: 'ok', 
+    message: 'Server is running',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
@@ -124,10 +125,26 @@ app.use('*', (req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📱 API available at http://0.0.0.0:${PORT}/api`);
   console.log('🔌 Socket.IO server running');
   console.log('📱 Mobile devices can connect using your computer\'s IP address');
+  
+  // Get and display all network interfaces
+  const os = require('os');
+  const networkInterfaces = os.networkInterfaces();
+  console.log('\n📡 Available network addresses:');
+  
+  Object.keys(networkInterfaces).forEach((interfaceName) => {
+    const interfaces = networkInterfaces[interfaceName];
+    interfaces.forEach((interface) => {
+      if (interface.family === 'IPv4' && !interface.internal) {
+        console.log(`   ${interfaceName}: http://${interface.address}:${PORT}/api`);
+      }
+    });
+  });
+  
+  console.log('\n💡 Use any of the above IP addresses in your mobile app config');
 });

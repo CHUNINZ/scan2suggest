@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'camera_scan_page.dart';
 import 'app_theme.dart';
+import 'services/api_service.dart';
+import 'models/notification_model.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 // Notification type enum for better type safety
 enum NotificationType {
@@ -9,31 +12,8 @@ enum NotificationType {
   comment,
   follow,
   recipe,
-}
-
-// Notification model class
-class NotificationItem {
-  final String id;
-  final String title;
-  final String subtitle;
-  final IconData iconData;
-  final Color iconColor;
-  final NotificationType type;
-  final String timestamp;
-  bool isNew; // Changed to mutable
-  final Widget? trailing;
-
-  NotificationItem({
-    required this.id,
-    required this.title,
-    required this.subtitle,
-    required this.iconData,
-    required this.iconColor,
-    required this.type,
-    required this.timestamp,
-    this.isNew = false,
-    this.trailing,
-  });
+  system,
+  share,
 }
 
 class NotificationPage extends StatefulWidget {
@@ -51,8 +31,14 @@ class _NotificationPageState extends State<NotificationPage>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
   
-  // All notifications data
-  late List<NotificationItem> _allNotifications;
+  // Notifications from backend
+  List<NotificationModel> _allNotifications = [];
+  bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
+  int _currentPage = 1;
+  bool _hasMoreData = true;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -71,190 +57,177 @@ class _NotificationPageState extends State<NotificationPage>
       curve: Curves.easeInOut,
     ));
     
-    _initializeNotifications();
-    _fadeController.forward();
+    _scrollController.addListener(_onScroll);
+    _loadNotifications();
   }
 
   @override
   void dispose() {
     _fadeController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  void _initializeNotifications() {
-    _allNotifications = [
-      // NEW NOTIFICATIONS
-      NotificationItem(
-        id: 'new_1',
-        title: 'Rhian Matanguihan',
-        subtitle: 'now following you',
-        iconData: Icons.person_add,
-        iconColor: Colors.blue,
-        type: NotificationType.follow,
-        timestamp: '1h',
-        isNew: true,
-        trailing: _buildFollowButton(),
-      ),
-      NotificationItem(
-        id: 'new_2',
-        title: 'Recipe Alert',
-        subtitle: 'New Filipino recipes matching your interests',
-        iconData: Icons.restaurant_menu,
-        iconColor: Colors.orange,
-        type: NotificationType.recipe,
-        timestamp: '2h',
-        isNew: true,
-      ),
-      
-      // TODAY NOTIFICATIONS
-      NotificationItem(
-        id: 'today_1',
-        title: 'Micaella Matanguihan and Monica Matanguihan',
-        subtitle: 'liked your Ginataang Kalabasa recipe',
-        iconData: Icons.favorite,
-        iconColor: Colors.red,
-        type: NotificationType.like,
-        timestamp: '20 min',
-        isNew: false,
-      ),
-      NotificationItem(
-        id: 'today_2',
-        title: 'Lovely Vicky Matanguihan',
-        subtitle: 'now following you',
-        iconData: Icons.person_add,
-        iconColor: Colors.blue,
-        type: NotificationType.follow,
-        timestamp: '1h',
-        isNew: false,
-        trailing: _buildFollowButton(),
-      ),
-      NotificationItem(
-        id: 'today_3',
-        title: 'Filipino Food Lovers',
-        subtitle: 'commented on your Chicken Inasal',
-        iconData: Icons.comment,
-        iconColor: Colors.green,
-        type: NotificationType.comment,
-        timestamp: '45 min',
-        isNew: false,
-      ),
-      NotificationItem(
-        id: 'today_4',
-        title: 'Traditional Recipes Group',
-        subtitle: 'shared your Bibingka recipe',
-        iconData: Icons.share,
-        iconColor: Colors.purple,
-        type: NotificationType.recipe,
-        timestamp: '2h',
-        isNew: false,
-      ),
-      
-      // YESTERDAY NOTIFICATIONS
-      NotificationItem(
-        id: 'yesterday_1',
-        title: 'Cooking Enthusiasts',
-        subtitle: 'liked your Sinigang na Baboy recipe',
-        iconData: Icons.favorite,
-        iconColor: Colors.red,
-        type: NotificationType.like,
-        timestamp: '1d',
-        isNew: false,
-      ),
-      NotificationItem(
-        id: 'yesterday_2',
-        title: 'Pinoy Chef Community',
-        subtitle: 'featured your Taho recipe in their collection',
-        iconData: Icons.star,
-        iconColor: Colors.amber,
-        type: NotificationType.recipe,
-        timestamp: '1d',
-        isNew: false,
-      ),
-      NotificationItem(
-        id: 'yesterday_3',
-        title: 'Food Photography Group',
-        subtitle: 'commented on your recipe photos',
-        iconData: Icons.photo_camera,
-        iconColor: Colors.indigo,
-        type: NotificationType.comment,
-        timestamp: '1d',
-        isNew: false,
-      ),
-      NotificationItem(
-        id: 'yesterday_4',
-        title: 'Asian Cuisine Lovers',
-        subtitle: 'saved your Adobo recipe to favorites',
-        iconData: Icons.bookmark,
-        iconColor: Colors.teal,
-        type: NotificationType.like,
-        timestamp: '1d',
-        isNew: false,
-      ),
-      
-      // THIS WEEK NOTIFICATIONS
-      NotificationItem(
-        id: 'week_1',
-        title: 'Recipe Challenge',
-        subtitle: 'Join the "Best Adobo Recipe" challenge',
-        iconData: Icons.emoji_events,
-        iconColor: Colors.deepOrange,
-        type: NotificationType.recipe,
-        timestamp: '3d',
-        isNew: false,
-      ),
-      NotificationItem(
-        id: 'week_2',
-        title: 'Monthly Report',
-        subtitle: 'Your recipes got 1.2k views this month!',
-        iconData: Icons.analytics,
-        iconColor: Colors.cyan,
-        type: NotificationType.recipe,
-        timestamp: '5d',
-        isNew: false,
-      ),
-      NotificationItem(
-        id: 'week_3',
-        title: 'Chef Maria Santos',
-        subtitle: 'commented: "Amazing traditional recipe!"',
-        iconData: Icons.comment,
-        iconColor: Colors.green,
-        type: NotificationType.comment,
-        timestamp: '4d',
-        isNew: false,
-      ),
-      NotificationItem(
-        id: 'week_4',
-        title: 'John Dela Cruz',
-        subtitle: 'started following you',
-        iconData: Icons.person_add,
-        iconColor: Colors.blue,
-        type: NotificationType.follow,
-        timestamp: '6d',
-        isNew: false,
-        trailing: _buildFollowButton(),
-      ),
-    ];
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent * 0.8) {
+      if (!_isLoading && _hasMoreData) {
+        _loadMoreNotifications();
+      }
+    }
+  }
+
+  Future<void> _loadNotifications({bool refresh = false}) async {
+    if (refresh) {
+      setState(() {
+        _currentPage = 1;
+        _hasMoreData = true;
+        _allNotifications.clear();
+      });
+    }
+
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    try {
+      final response = await ApiService.getNotifications(
+        page: _currentPage,
+        limit: 20,
+        unreadOnly: false,
+      );
+
+      if (response['success'] == true) {
+        final notifications = (response['notifications'] as List)
+            .map((json) => NotificationModel.fromJson(json))
+            .toList();
+
+        setState(() {
+          if (refresh) {
+            _allNotifications = notifications;
+          } else {
+            _allNotifications.addAll(notifications);
+          }
+          _isLoading = false;
+          _hasError = false;
+          
+          // Check if there's more data
+          final pagination = response['pagination'];
+          if (pagination != null) {
+            _hasMoreData = pagination['page'] < pagination['pages'];
+          } else {
+            _hasMoreData = notifications.length >= 20;
+          }
+        });
+
+        _fadeController.forward();
+      } else {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage = response['message'] ?? 'Failed to load notifications';
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading notifications: $e');
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = 'Network error. Please check your connection.';
+      });
+    }
+  }
+
+  Future<void> _loadMoreNotifications() async {
+    setState(() {
+      _currentPage++;
+    });
+    await _loadNotifications();
+  }
+
+  Future<void> _markAsRead(String notificationId) async {
+    try {
+      final response = await ApiService.markNotificationAsRead(notificationId);
+      if (response['success'] == true) {
+        setState(() {
+          final index = _allNotifications.indexWhere((n) => n.id == notificationId);
+          if (index != -1) {
+            // Create a new notification with updated isRead status
+            final oldNotif = _allNotifications[index];
+            _allNotifications[index] = NotificationModel(
+              id: oldNotif.id,
+              recipient: oldNotif.recipient,
+              sender: oldNotif.sender,
+              type: oldNotif.type,
+              title: oldNotif.title,
+              message: oldNotif.message,
+              relatedRecipe: oldNotif.relatedRecipe,
+              data: oldNotif.data,
+              isRead: true,
+              readAt: DateTime.now(),
+              isDeleted: oldNotif.isDeleted,
+              deletedAt: oldNotif.deletedAt,
+              createdAt: oldNotif.createdAt,
+            );
+          }
+        });
+      }
+    } catch (e) {
+      print('❌ Error marking notification as read: $e');
+    }
+  }
+
+  Future<void> _markAllAsRead() async {
+    try {
+      final response = await ApiService.markAllNotificationsAsRead();
+      if (response['success'] == true) {
+        setState(() {
+          _allNotifications = _allNotifications.map((notif) {
+            return NotificationModel(
+              id: notif.id,
+              recipient: notif.recipient,
+              sender: notif.sender,
+              type: notif.type,
+              title: notif.title,
+              message: notif.message,
+              relatedRecipe: notif.relatedRecipe,
+              data: notif.data,
+              isRead: true,
+              readAt: DateTime.now(),
+              isDeleted: notif.isDeleted,
+              deletedAt: notif.deletedAt,
+              createdAt: notif.createdAt,
+            );
+          }).toList();
+        });
+        
+        _showSnackBar('All notifications marked as read', isSuccess: true);
+      }
+    } catch (e) {
+      print('❌ Error marking all as read: $e');
+      _showSnackBar('Failed to mark all as read', isSuccess: false);
+    }
   }
 
   // Filter notifications based on selected category
-  List<NotificationItem> get _filteredNotifications {
+  List<NotificationModel> get _filteredNotifications {
     if (_selectedFilter == 'All') {
       return _allNotifications;
     }
     
-    NotificationType? filterType;
+    String? filterType;
     switch (_selectedFilter) {
       case 'Likes':
-        filterType = NotificationType.like;
+        filterType = 'like';
         break;
       case 'Comments':
-        filterType = NotificationType.comment;
+        filterType = 'comment';
         break;
       case 'Follows':
-        filterType = NotificationType.follow;
+        filterType = 'follow';
         break;
       case 'Recipes':
-        filterType = NotificationType.recipe;
+        filterType = 'recipe';
         break;
     }
     
@@ -266,369 +239,411 @@ class _NotificationPageState extends State<NotificationPage>
   }
 
   // Group filtered notifications by time period
-  Map<String, List<NotificationItem>> get _groupedNotifications {
+  Map<String, List<NotificationModel>> get _groupedNotifications {
     final filtered = _filteredNotifications;
-    final Map<String, List<NotificationItem>> grouped = {
+    final now = DateTime.now();
+    
+    final Map<String, List<NotificationModel>> grouped = {
       'New': [],
       'Today': [],
-      'Yesterday': [],
       'This Week': [],
+      'Earlier': [],
     };
     
-    for (var notification in filtered) {
-      if (notification.isNew) {
-        grouped['New']!.add(notification);
-      } else if (notification.timestamp.contains('min') || 
-                 notification.timestamp.contains('h') && 
-                 !notification.timestamp.contains('1d')) {
-        grouped['Today']!.add(notification);
-      } else if (notification.timestamp.contains('1d')) {
-        grouped['Yesterday']!.add(notification);
+    for (var notif in filtered) {
+      final difference = now.difference(notif.createdAt);
+      
+      if (!notif.isRead) {
+        grouped['New']!.add(notif);
+      } else if (difference.inHours < 24) {
+        grouped['Today']!.add(notif);
+      } else if (difference.inDays < 7) {
+        grouped['This Week']!.add(notif);
       } else {
-        grouped['This Week']!.add(notification);
+        grouped['Earlier']!.add(notif);
       }
     }
     
-    // Remove empty groups
+    // Remove empty sections
     grouped.removeWhere((key, value) => value.isEmpty);
     
     return grouped;
   }
 
-  void _selectScanOption(String option) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CameraScanPage(scanType: option),
+  @override
+  Widget build(BuildContext context) {
+    final unreadCount = _allNotifications.where((n) => !n.isRead).length;
+    
+    return Scaffold(
+      backgroundColor: AppTheme.backgroundOffWhite,
+      body: RefreshIndicator(
+        onRefresh: () => _loadNotifications(refresh: true),
+        color: AppTheme.primaryDarkGreen,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // App Bar
+            SliverAppBar(
+              floating: true,
+              pinned: true,
+              backgroundColor: AppTheme.surfaceWhite,
+              elevation: 0,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Notifications',
+                    style: TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (unreadCount > 0)
+                    Text(
+                      '$unreadCount new',
+                      style: const TextStyle(
+                        color: AppTheme.primaryDarkGreen,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                ],
+              ),
+              actions: [
+                if (unreadCount > 0)
+                  TextButton(
+                    onPressed: _markAllAsRead,
+                    child: const Text(
+                      'Mark all read',
+                      style: TextStyle(
+                        color: AppTheme.primaryDarkGreen,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            
+            // Filter Chips
+            SliverToBoxAdapter(
+              child: Container(
+                color: AppTheme.surfaceWhite,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _filterOptions.map((option) {
+                      final isSelected = _selectedFilter == option;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(option),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() {
+                                _selectedFilter = option;
+                              });
+                              HapticFeedback.selectionClick();
+                            }
+                          },
+                          backgroundColor: AppTheme.backgroundOffWhite,
+                          selectedColor: AppTheme.primaryDarkGreen,
+                          labelStyle: TextStyle(
+                            color: isSelected ? AppTheme.surfaceWhite : AppTheme.textPrimary,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            side: BorderSide(
+                              color: isSelected ? AppTheme.primaryDarkGreen : Colors.transparent,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+            
+            // Content
+            if (_isLoading && _allNotifications.isEmpty)
+              SliverFillRemaining(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        color: AppTheme.primaryDarkGreen,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Loading notifications...',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (_hasError && _allNotifications.isEmpty)
+              SliverFillRemaining(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: AppTheme.textSecondary,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _errorMessage,
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 16,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => _loadNotifications(refresh: true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryDarkGreen,
+                          foregroundColor: AppTheme.surfaceWhite,
+                        ),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (_filteredNotifications.isEmpty)
+              SliverFillRemaining(
+                child: _buildEmptyState(),
+              )
+            else
+              ..._buildNotificationsList(),
+            
+            // Loading indicator at bottom
+            if (_isLoading && _allNotifications.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AppTheme.primaryDarkGreen,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  void _onFilterSelected(String filter) {
-    if (_selectedFilter != filter) {
-      HapticFeedback.selectionClick();
-      setState(() {
-        _selectedFilter = filter;
-      });
-      
-      // Restart animation
-      _fadeController.reset();
-      _fadeController.forward();
-      
-      // NO FEEDBACK TEXT - Removed as per requirements
-    }
-  }
-
-  void _markAllAsRead() {
-    HapticFeedback.lightImpact();
+  List<Widget> _buildNotificationsList() {
+    final grouped = _groupedNotifications;
+    final List<Widget> slivers = [];
     
-    // Count unread notifications before marking as read
-    final unreadCount = _allNotifications.where((n) => n.isNew).length;
-    
-    if (unreadCount == 0) {
-      // Show message if all already read
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Text('All notifications are already read'),
-            ],
+    grouped.forEach((period, notifications) {
+      // Section header
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              period,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
+              ),
+            ),
           ),
-          backgroundColor: AppTheme.textSecondary,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          duration: const Duration(seconds: 2),
         ),
       );
-      return;
-    }
-    
-    setState(() {
-      // Mark all notifications as read
-      for (var notification in _allNotifications) {
-        notification.isNew = false;
-      }
+      
+      // Notifications in this section
+      slivers.add(
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final notification = notifications[index];
+              return FadeTransition(
+                opacity: _fadeAnimation,
+                child: _buildNotificationCard(notification),
+              );
+            },
+            childCount: notifications.length,
+          ),
+        ),
+      );
     });
     
-    // Show success message with count
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.done_all, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Text('$unreadCount notification${unreadCount > 1 ? 's' : ''} marked as read'),
-          ],
+    return slivers;
+  }
+
+  Widget _buildNotificationCard(NotificationModel notification) {
+    final iconData = _getIconForType(notification.type);
+    final iconColor = _getColorForType(notification.type);
+    final timeAgo = timeago.format(notification.createdAt, locale: 'en_short');
+    
+    return Dismissible(
+      key: Key(notification.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: Colors.red,
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      onDismissed: (direction) {
+        setState(() {
+          _allNotifications.removeWhere((n) => n.id == notification.id);
+        });
+        _showSnackBar('Notification deleted', isSuccess: true);
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          color: notification.isRead 
+              ? AppTheme.surfaceWhite 
+              : AppTheme.primaryDarkGreen.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: notification.isRead 
+                ? AppTheme.textDisabled.withOpacity(0.2)
+                : AppTheme.primaryDarkGreen.withOpacity(0.3),
+            width: 1,
+          ),
         ),
-        backgroundColor: AppTheme.success,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-        duration: const Duration(seconds: 2),
-        action: SnackBarAction(
-          label: 'UNDO',
-          textColor: Colors.white,
-          onPressed: () {
-            // Undo functionality - mark the notifications back as new
-            setState(() {
-              for (var notification in _allNotifications) {
-                if (notification.id.startsWith('new_')) {
-                  notification.isNew = true;
-                }
-              }
-            });
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              iconData,
+              color: iconColor,
+              size: 24,
+            ),
+          ),
+          title: Text(
+            notification.title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: notification.isRead ? FontWeight.w500 : FontWeight.bold,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Text(
+                notification.message,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textSecondary,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                timeAgo,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary.withOpacity(0.7),
+                ),
+              ),
+            ],
+          ),
+          trailing: !notification.isRead
+              ? Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.primaryDarkGreen,
+                    shape: BoxShape.circle,
+                  ),
+                )
+              : null,
+          onTap: () {
+            if (!notification.isRead) {
+              _markAsRead(notification.id);
+            }
+            HapticFeedback.selectionClick();
+            // TODO: Navigate to related content if applicable
           },
         ),
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: AppTheme.backgroundGradientDecoration(),
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Header with mark all read button
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Notifications',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: AppTheme.textPrimary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      // Show unread count badge next to title
-                      if (_allNotifications.any((n) => n.isNew))
-                        Container(
-                          margin: const EdgeInsets.only(left: 12),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.error,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.error.withOpacity(0.3),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            '${_allNotifications.where((n) => n.isNew).length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  // Only show "Mark all read" button if there are unread notifications
-                  if (_allNotifications.any((n) => n.isNew))
-                    TextButton.icon(
-                      onPressed: _markAllAsRead,
-                      icon: const Icon(Icons.done_all, size: 18),
-                      label: const Text('Mark all read'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppTheme.primaryDarkGreen,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        backgroundColor: AppTheme.primaryDarkGreen.withOpacity(0.1),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            
-            // Filter chips
-            Container(
-              height: 60,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _filterOptions.length,
-                itemBuilder: (context, index) {
-                  final filter = _filterOptions[index];
-                  final isSelected = _selectedFilter == filter;
-                  
-                  // Count UNREAD notifications for this filter
-                  int unreadCount = 0;
-                  if (filter == 'All') {
-                    unreadCount = _allNotifications.where((n) => n.isNew).length;
-                  } else {
-                    NotificationType? type;
-                    switch (filter) {
-                      case 'Likes':
-                        type = NotificationType.like;
-                        break;
-                      case 'Comments':
-                        type = NotificationType.comment;
-                        break;
-                      case 'Follows':
-                        type = NotificationType.follow;
-                        break;
-                      case 'Recipes':
-                        type = NotificationType.recipe;
-                        break;
-                    }
-                    if (type != null) {
-                      unreadCount = _allNotifications
-                          .where((n) => n.type == type && n.isNew)
-                          .length;
-                    }
-                  }
-                  
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: FilterChip(
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(filter),
-                          // Only show badge if there are UNREAD notifications
-                          if (unreadCount > 0) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: isSelected 
-                                    ? Colors.white.withOpacity(0.3)
-                                    : AppTheme.error,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                unreadCount.toString(),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      selected: isSelected,
-                      onSelected: (selected) => _onFilterSelected(filter),
-                      selectedColor: AppTheme.primaryDarkGreen,
-                      backgroundColor: AppTheme.surfaceWhite,
-                      checkmarkColor: Colors.white,
-                      labelStyle: TextStyle(
-                        color: isSelected ? Colors.white : AppTheme.textSecondary,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 14,
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      elevation: isSelected ? 4 : 1,
-                      shadowColor: isSelected 
-                          ? AppTheme.primaryDarkGreen.withOpacity(0.3)
-                          : Colors.black.withOpacity(0.1),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            const SizedBox(height: 8),
-            
-            // Notifications list
-            Expanded(
-              child: _buildNotificationsList(),
-            ),
-          ],
-        ),
-      ),
-    );
+  IconData _getIconForType(String type) {
+    switch (type) {
+      case 'like':
+        return Icons.favorite;
+      case 'comment':
+        return Icons.comment;
+      case 'follow':
+        return Icons.person_add;
+      case 'recipe':
+        return Icons.restaurant_menu;
+      case 'share':
+        return Icons.share;
+      default:
+        return Icons.notifications;
+    }
   }
 
-  Widget _buildNotificationsList() {
-    final groupedNotifications = _groupedNotifications;
-    
-    if (groupedNotifications.isEmpty) {
-      return _buildEmptyState();
+  Color _getColorForType(String type) {
+    switch (type) {
+      case 'like':
+        return Colors.red;
+      case 'comment':
+        return AppTheme.primaryDarkGreen;
+      case 'follow':
+        return Colors.blue;
+      case 'recipe':
+        return Colors.orange;
+      case 'share':
+        return Colors.purple;
+      default:
+        return AppTheme.textSecondary;
     }
-    
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-        itemCount: groupedNotifications.length,
-        itemBuilder: (context, index) {
-          final section = groupedNotifications.keys.elementAt(index);
-          final notifications = groupedNotifications[section]!;
-          
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: _buildNotificationSection(section, notifications),
-          );
-        },
-      ),
-    );
   }
 
   Widget _buildEmptyState() {
-    String message;
-    IconData icon;
-    
-    switch (_selectedFilter) {
-      case 'Likes':
-        message = 'No likes yet';
-        icon = Icons.favorite_outline;
-        break;
-      case 'Comments':
-        message = 'No comments yet';
-        icon = Icons.comment_outlined;
-        break;
-      case 'Follows':
-        message = 'No new followers';
-        icon = Icons.person_add_outlined;
-        break;
-      case 'Recipes':
-        message = 'No recipe notifications';
-        icon = Icons.restaurant_menu_outlined;
-        break;
-      default:
-        message = 'No notifications';
-        icon = Icons.notifications_none;
-    }
-    
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: AppTheme.textDisabled.withOpacity(0.2),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: 50,
-              color: AppTheme.textDisabled,
-            ),
+          Icon(
+            Icons.notifications_none,
+            size: 80,
+            color: AppTheme.textSecondary.withOpacity(0.5),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           Text(
-            message,
+            _selectedFilter == 'All' 
+                ? 'No notifications yet' 
+                : 'No $_selectedFilter notifications',
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -638,11 +653,11 @@ class _NotificationPageState extends State<NotificationPage>
           const SizedBox(height: 8),
           Text(
             _selectedFilter == 'All'
-                ? 'You\'re all caught up!'
-                : 'Check back later for updates',
-            style: const TextStyle(
+                ? 'When you get notifications, they\'ll show up here'
+                : 'Try selecting a different filter',
+            style: TextStyle(
               fontSize: 16,
-              color: AppTheme.textSecondary,
+              color: AppTheme.textSecondary.withOpacity(0.7),
             ),
             textAlign: TextAlign.center,
           ),
@@ -651,205 +666,16 @@ class _NotificationPageState extends State<NotificationPage>
     );
   }
 
-  Widget _buildNotificationSection(String title, List<NotificationItem> notifications) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryDarkGreen.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppTheme.primaryDarkGreen.withOpacity(0.3),
-                  width: 1,
-                ),
-              ),
-              child: Text(
-                '${notifications.length}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.primaryDarkGreen,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
+  void _showSnackBar(String message, {bool isSuccess = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isSuccess ? AppTheme.success : Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
         ),
-        const SizedBox(height: 16),
-        Column(
-          children: notifications.map((notification) {
-            return _buildNotificationItem(notification);
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNotificationItem(NotificationItem notification) {
-    return Container(
-      key: ValueKey(notification.id),
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: notification.isNew 
-            ? AppTheme.primaryDarkGreen.withOpacity(0.05)
-            : AppTheme.surfaceWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: notification.isNew
-            ? Border.all(
-                color: AppTheme.primaryDarkGreen.withOpacity(0.2),
-                width: 1.5,
-              )
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Icon container
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: notification.iconColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(25),
-                border: Border.all(
-                  color: notification.iconColor.withOpacity(0.3),
-                  width: 1.5,
-                ),
-              ),
-              child: Icon(
-                notification.iconData,
-                color: notification.iconColor,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 16),
-            
-            // Content
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          notification.title,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (notification.isNew)
-                        Container(
-                          margin: const EdgeInsets.only(left: 8),
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: AppTheme.primaryDarkGreen,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    notification.subtitle,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textSecondary,
-                      height: 1.3,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.access_time,
-                        size: 14,
-                        color: AppTheme.textSecondary.withOpacity(0.7),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        notification.timestamp,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary.withOpacity(0.7),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            
-            // Trailing widget (e.g., Follow button)
-            if (notification.trailing != null) ...[
-              const SizedBox(width: 12),
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: notification.trailing!,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFollowButton() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [
-            AppTheme.primaryDarkGreen,
-            AppTheme.secondaryLightGreen,
-          ],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryDarkGreen.withOpacity(0.3),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: const Text(
-        'Follow',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-        ),
+        duration: const Duration(seconds: 2),
       ),
     );
   }

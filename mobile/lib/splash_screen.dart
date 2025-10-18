@@ -3,6 +3,7 @@ import 'dart:async';
 import 'onboarding.dart';
 import 'main_navigation_controller.dart';
 import 'app_theme.dart';
+import 'services/api_service.dart';
 
 class SplashScreen extends StatefulWidget {
   final bool isPostSignup;
@@ -136,24 +137,28 @@ class _SplashScreenState extends State<SplashScreen>
     }
   }
   
-  void _navigateToNextScreen() {
+  void _navigateToNextScreen() async {
     Widget nextScreen;
     String navigationReason;
-    
-    if (widget.isPostLogout) {
-      // After logout, go to onboarding
-      nextScreen = const Onboarding();
-      navigationReason = 'logout';
-    } else if (widget.isPostSignup) {
-      // After signup, go to main app
-      nextScreen = const MainNavigationController();
-      navigationReason = 'signup';
-    } else {
-      // First launch, go to onboarding
+
+    // Try auto-login using stored JWT token
+    await ApiService.initializeToken();
+    try {
+      final user = await ApiService.getCurrentUser();
+      if (user != null && user['success'] == true) {
+        nextScreen = const MainNavigationController();
+        navigationReason = 'autologin';
+      } else {
+        nextScreen = const Onboarding();
+        navigationReason = 'first_launch';
+      }
+    } catch (e) {
+      // Token invalid or not present, go to onboarding
       nextScreen = const Onboarding();
       navigationReason = 'first_launch';
     }
 
+    if (!mounted) return;
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
@@ -162,7 +167,6 @@ class _SplashScreenState extends State<SplashScreen>
         },
         transitionDuration: const Duration(milliseconds: 800),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          // Different transition effects based on navigation reason
           if (navigationReason == 'logout') {
             return SlideTransition(
               position: Tween<Offset>(

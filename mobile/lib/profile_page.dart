@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'recipe_details_page.dart';
 import 'edit_profile_screen.dart';
 import 'splash_screen.dart';
+import 'followers_list_page.dart';
 import 'app_theme.dart';
 import 'services/api_service.dart';
 
@@ -82,10 +83,11 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
   }
 
   Future<void> _loadUserData() async {
-    await Future.wait([
-      _loadUserProfile(),
-      _loadUserRecipes(),
-    ]);
+    // Load profile first to get userId
+    await _loadUserProfile();
+    
+    // Then load recipes using the userId
+    await _loadUserRecipes();
     
     // Start animations after data is loaded
     _fadeController.forward();
@@ -144,30 +146,31 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
         _isLoadingRecipes = true;
       });
 
-      // Get current user's recipes
-      final response = await ApiService.getRecipes(
-        page: 1,
-        limit: 50,
-        sort: 'createdAt',
-        order: 'desc',
-      );
+      // Get current user ID
+      final userId = _userProfile?['id'];
       
-      if (response['success'] == true && mounted) {
-        final allRecipes = (response['recipes'] as List).cast<Map<String, dynamic>>();
-        
-        // Filter recipes by current user
-        final userId = _userProfile?['id'];
-        final userRecipes = allRecipes.where((recipe) {
-          final creatorId = recipe['creator'] is Map 
-              ? recipe['creator']['_id'] ?? recipe['creator']['id']
-              : recipe['creator'];
-          return creatorId == userId;
-        }).toList();
+      if (userId == null) {
+        setState(() {
+          _isLoadingRecipes = false;
+        });
+        return;
+      }
 
-        // Get liked recipes (recipes with isLiked flag or from likedRecipes array)
-        final likedRecipes = allRecipes.where((recipe) {
-          return recipe['isLiked'] == true;
-        }).toList();
+      // Get both user's own recipes and liked recipes in parallel
+      final results = await Future.wait([
+        ApiService.getRecipes(
+          page: 1,
+          limit: 50,
+          creatorId: userId,
+          sort: 'createdAt',
+          order: 'desc',
+        ),
+        ApiService.getLikedRecipes(),
+      ]);
+
+      if (results[0]['success'] == true && results[1]['success'] == true && mounted) {
+        final userRecipes = (results[0]['recipes'] as List).cast<Map<String, dynamic>>();
+        final likedRecipes = (results[1]['recipes'] as List).cast<Map<String, dynamic>>();
 
         setState(() {
           _userRecipes = _transformRecipes(userRecipes);
@@ -828,7 +831,12 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
   }
 
   Widget _buildStatItem(String value, String label, IconData icon) {
-    return Column(
+    final isClickable = label == 'Followers' || label == 'Following';
+    final profile = _userProfile ?? {};
+    final userId = profile['id'];
+    final userName = profile['name'];
+    
+    Widget statContent = Column(
       children: [
         Icon(icon, color: AppTheme.primaryDarkGreen, size: 24),
         const SizedBox(height: 8),
@@ -849,6 +857,27 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
         ),
       ],
     );
+    
+    if (isClickable && userId != null && userName != null) {
+      return GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => FollowersListPage(
+                userId: userId.toString(),
+                userName: userName,
+                isFollowers: label == 'Followers',
+              ),
+            ),
+          );
+        },
+        child: statContent,
+      );
+    }
+    
+    return statContent;
   }
 
   Widget _buildTabBar() {

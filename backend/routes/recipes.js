@@ -21,7 +21,8 @@ router.get('/', optionalAuth, async (req, res) => {
       search,
       sort = 'createdAt',
       order = 'desc',
-      featured
+      featured,
+      creator
     } = req.query;
 
     const skip = (page - 1) * limit;
@@ -32,6 +33,7 @@ router.get('/', optionalAuth, async (req, res) => {
     if (difficulty) query.difficulty = difficulty;
     if (cuisine) query.cuisine = cuisine;
     if (featured === 'true') query.isFeatured = true;
+    if (creator) query.creator = creator;
 
     // Search functionality
     if (search) {

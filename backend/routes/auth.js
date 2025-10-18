@@ -357,6 +357,50 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+// @route   GET /api/auth/liked-recipes
+// @desc    Get user's liked recipes with full details
+// @access  Private
+router.get('/liked-recipes', auth, async (req, res) => {
+  try {
+    const Recipe = require('../models/Recipe');
+    
+    const user = await User.findById(req.user._id).select('likedRecipes');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get full recipe details for liked recipes
+    const likedRecipes = await Recipe.find({
+      _id: { $in: user.likedRecipes },
+      isPublished: true
+    })
+      .populate('creator', 'name profileImage')
+      .sort({ createdAt: -1 });
+
+    // Add user interaction flags
+    likedRecipes.forEach(recipe => {
+      recipe._doc.isLiked = true; // All these recipes are liked
+      recipe._doc.isBookmarked = user.bookmarkedRecipes?.includes(recipe._id) || false;
+    });
+
+    res.json({
+      success: true,
+      recipes: likedRecipes,
+      total: likedRecipes.length
+    });
+  } catch (error) {
+    console.error('Get liked recipes error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
 // @route   POST /api/auth/refresh
 // @desc    Refresh JWT token
 // @access  Private

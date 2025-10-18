@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'camera_scan_page.dart';
+import 'notification_page.dart';
 import 'app_theme.dart';
 import 'services/api_service.dart';
 import 'dart:async';
@@ -199,7 +200,48 @@ class _MainScaffoldState extends State<MainScaffold>
                 ),
               ],
             ),
-            actions: widget.actions,
+            actions: widget.actions ?? [
+              // Notification bell in top right
+              Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications_outlined, color: AppTheme.primaryDarkGreen),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const NotificationPage()),
+                      );
+                    },
+                  ),
+                  if (_unreadNotificationCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.error,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          _unreadNotificationCount > 99 ? '99+' : _unreadNotificationCount.toString(),
+                          style: const TextStyle(
+                            color: AppTheme.surfaceWhite,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 8),
+            ],
           ),
       body: Stack(
         children: [
@@ -323,12 +365,10 @@ class _MainScaffoldState extends State<MainScaffold>
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        _buildNavItem(0, Icons.home, Icons.home_outlined, 'Home'),
-                        _buildNavItem(1, Icons.cloud_upload, Icons.cloud_upload_outlined, 'Upload'),
+                        _buildNavItem(0, Icons.dynamic_feed, Icons.dynamic_feed_outlined, 'Feed'),
+                        _buildNavItem(1, Icons.explore, Icons.explore_outlined, 'Discover'),
                         const SizedBox(width: 64), // Space for FAB
-                        _unreadNotificationCount > 0
-                            ? _buildNavItemWithBadge(3, Icons.notifications, Icons.notifications_none, 'Notifications', _unreadNotificationCount.toString())
-                            : _buildNavItem(3, Icons.notifications, Icons.notifications_outlined, 'Notifications'),
+                        _buildNavItem(3, Icons.upload, Icons.upload_outlined, 'Upload'),
                         _buildNavItem(4, Icons.person, Icons.person_outline, 'Profile'),
                       ],
                     ),
@@ -397,44 +437,17 @@ class _MainScaffoldState extends State<MainScaffold>
   Widget _getAppBarIcon() {
     switch (widget.currentIndex) {
       case 0:
-        return const Icon(Icons.restaurant, color: AppTheme.primaryDarkGreen, size: 28);
+        return const Icon(Icons.dynamic_feed, color: AppTheme.primaryDarkGreen, size: 28);
+      case 1:
+        return const Icon(Icons.explore, color: AppTheme.primaryDarkGreen, size: 28);
       case 2:
         return const Icon(Icons.document_scanner, color: AppTheme.primaryDarkGreen, size: 28);
       case 3:
-        return Stack(
-          children: [
-            const Icon(Icons.notifications, color: AppTheme.primaryDarkGreen, size: 28),
-            if (_unreadNotificationCount > 0)
-              Positioned(
-                right: 0,
-                top: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: AppTheme.error,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  constraints: const BoxConstraints(
-                    minWidth: 16,
-                    minHeight: 16,
-                  ),
-                  child: Text(
-                    _unreadNotificationCount > 99 ? '99+' : _unreadNotificationCount.toString(),
-                    style: const TextStyle(
-                      color: AppTheme.surfaceWhite,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-          ],
-        );
+        return const Icon(Icons.upload, color: AppTheme.primaryDarkGreen, size: 28);
       case 4:
         return const Icon(Icons.person, color: AppTheme.primaryDarkGreen, size: 28);
       default:
-        return const Icon(Icons.restaurant, color: AppTheme.primaryDarkGreen, size: 28);
+        return const Icon(Icons.dynamic_feed, color: AppTheme.primaryDarkGreen, size: 28);
     }
   }
 
@@ -475,71 +488,6 @@ class _MainScaffoldState extends State<MainScaffold>
     );
   }
 
-  Widget _buildNavItemWithBadge(int index, IconData activeIcon, IconData inactiveIcon, String label, String badgeText) {
-    final isSelected = widget.currentIndex == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => _handleNavTap(index),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Icon(
-                    isSelected ? activeIcon : inactiveIcon,
-                    size: 22,
-                    color: isSelected ? AppTheme.primaryDarkGreen : AppTheme.textSecondary,
-                  ),
-                  Positioned(
-                    right: -6,
-                    top: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: AppTheme.error,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
-                      ),
-                      child: Text(
-                        badgeText,
-                        style: const TextStyle(
-                          color: AppTheme.surfaceWhite,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: isSelected ? 11 : 10,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                    color: isSelected ? AppTheme.primaryDarkGreen : AppTheme.textSecondary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildScanOption(String option, IconData icon, String subtitle, Color accentColor) {
     return GestureDetector(

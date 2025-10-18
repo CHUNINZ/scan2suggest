@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'home.dart';
+import 'social_feed_page.dart';
+import 'discover_page.dart';
 import 'upload_page.dart';
-import 'notification_page.dart';
 import 'profile_page.dart';
 import 'main_scaffold.dart';
 
@@ -21,18 +21,18 @@ class _MainNavigationControllerState extends State<MainNavigationController>
 
   // Initialize all pages once to maintain state
   late final List<Widget> _pages = [
-    const HomePage(),      // Index 0 - Home
-    const UploadPage(),    // Index 1 - Upload
-    const NotificationPage(), // Index 2 - Notification (mapped from index 3)
-    const ProfilePage(),   // Index 3 - Profile (mapped from index 4)
+    const SocialFeedPage(),      // Index 0 - Social Feed
+    const DiscoverPage(),        // Index 1 - Discover
+    const UploadPage(),          // Index 2 - Upload (mapped from index 3)
+    const ProfilePage(),         // Index 3 - Profile (mapped from index 4)
   ];
 
   // Page titles for the app bar
   final List<String> _pageTitles = [
-    'Start Cooking',       // Index 0 - Home
-    'Upload Recipe',       // Index 1 - Upload
-    'Notifications',       // Index 2 - Notification (from nav index 3)
-    'Profile',            // Index 3 - Profile (from nav index 4)
+    'Social Feed',         // Index 0 - Social Feed
+    'Discover',           // Index 1 - Discover
+    'Upload Recipe',      // Index 2 - Upload (from nav index 3)
+    'Profile',           // Index 3 - Profile (from nav index 4)
   ];
 
   @override

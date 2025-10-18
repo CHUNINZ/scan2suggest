@@ -38,18 +38,12 @@ class _RecipeDetailsPageState extends State<RecipeDetailsPage> {
     return 0;
   }
   
-  // Track checked ingredients
-  final Set<int> _checkedIngredients = {};
-
   // Get ingredients from recipe data
   List<Map<String, dynamic>> get _ingredients {
     final ingredientsList = widget.recipe['ingredients'] as List<dynamic>? ?? [];
-    return ingredientsList.asMap().entries.map((entry) {
-      final ing = entry.value;
-      final index = entry.key;
+    return ingredientsList.map((ing) {
       return {
         'name': ing is String ? ing : (ing['name'] ?? 'Unknown ingredient'),
-        'checked': _checkedIngredients.contains(index),
       };
     }).toList();
   }
@@ -297,16 +291,6 @@ class _RecipeDetailsPageState extends State<RecipeDetailsPage> {
     }
     
     reviewController.dispose();
-  }
-
-  void _toggleIngredient(int index) {
-    setState(() {
-      if (_checkedIngredients.contains(index)) {
-        _checkedIngredients.remove(index);
-      } else {
-        _checkedIngredients.add(index);
-      }
-    });
   }
 
   String? _getFullImageUrl(dynamic image) {
@@ -610,40 +594,30 @@ class _RecipeDetailsPageState extends State<RecipeDetailsPage> {
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: ingredient['checked'] ? Colors.green.withOpacity(0.1) : Colors.white,
+                              color: Colors.grey[50],
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: ingredient['checked'] ? Colors.green : Colors.grey[300]!,
+                                color: Colors.grey[300]!,
                               ),
                             ),
                             child: Row(
                               children: [
-                                GestureDetector(
-                                  onTap: () => _toggleIngredient(index),
-                                  child: Container(
-                                    width: 24,
-                                    height: 24,
-                                    decoration: BoxDecoration(
-                                      color: ingredient['checked'] ? Colors.green : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: ingredient['checked'] ? Colors.green : Colors.grey,
-                                      ),
-                                    ),
-                                    child: ingredient['checked']
-                                        ? const Icon(Icons.check, color: Colors.white, size: 16)
-                                        : null,
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: Colors.green,
+                                    shape: BoxShape.circle,
                                   ),
                                 ),
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: Text(
                                     ingredient['name'],
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                       fontSize: 16,
-                                      color: ingredient['checked'] ? Colors.green : Colors.black87,
-                                      decoration: ingredient['checked'] ? TextDecoration.lineThrough : null,
-                                      fontWeight: ingredient['checked'] ? FontWeight.normal : FontWeight.w500,
+                                      color: Colors.black87,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ),

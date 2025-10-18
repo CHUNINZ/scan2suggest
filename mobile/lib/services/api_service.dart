@@ -418,6 +418,15 @@ class ApiService {
     return _handleResponse(response);
   }
   
+  static Future<Map<String, dynamic>> getLikedRecipes() async {
+    final response = await http.get(
+      Uri.parse('${ApiConfig.safeBaseUrl}/auth/liked-recipes'),
+      headers: _getHeaders(),
+    );
+    
+    return _handleResponse(response);
+  }
+  
   static Future<Map<String, dynamic>> logout() async {
     final response = await http.post(
       Uri.parse('${ApiConfig.safeBaseUrl}/auth/logout'),
@@ -836,6 +845,59 @@ class ApiService {
       headers: _getHeaders(),
     );
     
+    return _handleResponse(response);
+  }
+  
+  static Future<Map<String, dynamic>> getFollowers(
+    String userId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final queryParams = {
+      'page': page.toString(),
+      'limit': limit.toString(),
+    };
+    
+    final uri = Uri.parse('${ApiConfig.safeBaseUrl}/social/followers/$userId').replace(
+      queryParameters: queryParams,
+    );
+    
+    final response = await http.get(uri, headers: _getHeaders(includeAuth: false));
+    return _handleResponse(response);
+  }
+  
+  static Future<Map<String, dynamic>> getFollowing(
+    String userId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final queryParams = {
+      'page': page.toString(),
+      'limit': limit.toString(),
+    };
+    
+    final uri = Uri.parse('${ApiConfig.safeBaseUrl}/social/following/$userId').replace(
+      queryParameters: queryParams,
+    );
+    
+    final response = await http.get(uri, headers: _getHeaders(includeAuth: false));
+    return _handleResponse(response);
+  }
+  
+  static Future<Map<String, dynamic>> discoverUsers({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final queryParams = {
+      'page': page.toString(),
+      'limit': limit.toString(),
+    };
+    
+    final uri = Uri.parse('${ApiConfig.safeBaseUrl}/social/discover').replace(
+      queryParameters: queryParams,
+    );
+    
+    final response = await http.get(uri, headers: _getHeaders());
     return _handleResponse(response);
   }
   

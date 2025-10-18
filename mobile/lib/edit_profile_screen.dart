@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import 'app_theme.dart';
+import 'services/api_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final Map<String, dynamic> userProfile;
@@ -32,6 +35,9 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   bool _isLoading = false;
   bool _hasUnsavedChanges = false;
   String? _profileImagePath;
+  File? _newProfileImage;
+  bool _imageChanged = false;
+  final ImagePicker _imagePicker = ImagePicker();
   
   // Character limits
   static const int _maxNameLength = 50;
@@ -139,7 +145,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   color: Colors.blue,
                   onTap: () {
                     Navigator.pop(context);
-                    _showSnackBar('Camera functionality would be implemented here');
+                    _pickImageFromCamera();
                   },
                 ),
                 _buildPhotoOption(
@@ -148,7 +154,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   color: Colors.green,
                   onTap: () {
                     Navigator.pop(context);
-                    _showSnackBar('Gallery functionality would be implemented here');
+                    _pickImageFromGallery();
                   },
                 ),
                 _buildPhotoOption(
@@ -159,6 +165,8 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                     Navigator.pop(context);
                     setState(() {
                       _profileImagePath = null;
+                      _newProfileImage = null;
+                      _imageChanged = true;
                       _hasUnsavedChanges = true;
                     });
                   },
@@ -170,6 +178,48 @@ class _EditProfileScreenState extends State<EditProfileScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _pickImageFromCamera() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+      
+      if (image != null) {
+        setState(() {
+          _newProfileImage = File(image.path);
+          _imageChanged = true;
+          _hasUnsavedChanges = true;
+        });
+      }
+    } catch (e) {
+      _showSnackBar('Error accessing camera: ${e.toString()}');
+    }
+  }
+  
+  Future<void> _pickImageFromGallery() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+      
+      if (image != null) {
+        setState(() {
+          _newProfileImage = File(image.path);
+          _imageChanged = true;
+          _hasUnsavedChanges = true;
+        });
+      }
+    } catch (e) {
+      _showSnackBar('Error accessing gallery: ${e.toString()}');
+    }
   }
 
   Widget _buildPhotoOption({
@@ -299,34 +349,66 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       _isLoading = true;
     });
 
-    // Simulate API call
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    if (mounted) {
-      // Update profile data
-      final updatedProfile = {
-        'name': _nameController.text.trim(),
-        'bio': _bioController.text.trim(),
-        'location': _locationController.text.trim(),
-        'profileImageUrl': _profileImagePath,
-      };
-
-      widget.onProfileUpdated(updatedProfile);
-
-      setState(() {
-        _isLoading = false;
-        _hasUnsavedChanges = false;
-      });
-
-      // Show success message
-      _showSnackBar('Profile updated successfully!', isSuccess: true);
+    try {
+      String? newProfileImageUrl = _profileImagePath;
       
-      // Close the screen
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          Navigator.of(context).pop();
+      // Upload new profile image if changed
+      if (_imageChanged && _newProfileImage != null) {
+        final uploadResponse = await ApiService.uploadProfileImage(_newProfileImage!);
+        
+        if (uploadResponse['success'] == true) {
+          newProfileImageUrl = uploadResponse['profileImageUrl'];
+        } else {
+          throw Exception(uploadResponse['message'] ?? 'Failed to upload image');
         }
-      });
+      } else if (_imageChanged && _newProfileImage == null) {
+        // User removed profile image
+        newProfileImageUrl = null;
+      }
+      
+      // Update profile data
+      final response = await ApiService.updateProfile(
+        name: _nameController.text.trim(),
+        bio: _bioController.text.trim().isNotEmpty ? _bioController.text.trim() : null,
+        location: _locationController.text.trim().isNotEmpty ? _locationController.text.trim() : null,
+      );
+      
+      if (response['success'] == true && mounted) {
+        final updatedProfile = {
+          'name': _nameController.text.trim(),
+          'bio': _bioController.text.trim(),
+          'location': _locationController.text.trim(),
+          'profileImageUrl': newProfileImageUrl,
+        };
+
+        widget.onProfileUpdated(updatedProfile);
+
+        setState(() {
+          _isLoading = false;
+          _hasUnsavedChanges = false;
+          _imageChanged = false;
+        });
+
+        // Show success message
+        _showSnackBar('Profile updated successfully!', isSuccess: true);
+        
+        // Close the screen
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        });
+      } else {
+        throw Exception(response['message'] ?? 'Failed to update profile');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        
+        _showSnackBar('Error: ${e.toString().replaceAll('Exception: ', '')}');
+      }
     }
   }
 

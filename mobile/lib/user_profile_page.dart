@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'recipe_details_page.dart';
+import 'followers_list_page.dart';
 import 'app_theme.dart';
 import 'services/api_service.dart';
 import 'config/api_config.dart';
@@ -54,6 +55,14 @@ class _UserProfilePageState extends State<UserProfilePage> {
         _hasError = false;
       });
 
+      // Get current user to check following status
+      final currentUserResponse = await ApiService.getCurrentUser();
+      List<dynamic> following = [];
+      
+      if (currentUserResponse['success'] == true) {
+        following = currentUserResponse['user']['following'] as List? ?? [];
+      }
+
       // Get user profile (need to add this API endpoint)
       final response = await ApiService.getRecipes(
         creatorId: widget.userId,
@@ -76,6 +85,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
               'followersCount': creator is Map ? creator['followersCount'] : 0,
               'followingCount': creator is Map ? creator['followingCount'] : 0,
             };
+            // Check if current user is following this profile
+            _isFollowing = following.any((id) => id.toString() == widget.userId.toString());
             _isLoadingProfile = false;
           });
         } else {
@@ -90,6 +101,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
               'followersCount': 0,
               'followingCount': 0,
             };
+            // Check if current user is following this profile
+            _isFollowing = following.any((id) => id.toString() == widget.userId.toString());
             _isLoadingProfile = false;
           });
         }
@@ -469,7 +482,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
   }
 
   Widget _buildStatItem(String value, String label) {
-    return Column(
+    final isClickable = label == 'Followers' || label == 'Following';
+    
+    Widget statContent = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
@@ -490,6 +505,27 @@ class _UserProfilePageState extends State<UserProfilePage> {
         ),
       ],
     );
+    
+    if (isClickable && _userProfile != null) {
+      return GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => FollowersListPage(
+                userId: widget.userId,
+                userName: _userProfile!['name'] ?? widget.userName ?? 'User',
+                isFollowers: label == 'Followers',
+              ),
+            ),
+          );
+        },
+        child: statContent,
+      );
+    }
+    
+    return statContent;
   }
 
   Widget _buildTabBar() {

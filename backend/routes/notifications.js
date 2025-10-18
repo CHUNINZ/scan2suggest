@@ -24,7 +24,7 @@ router.get('/', auth, async (req, res) => {
 
     const notifications = await Notification.find(query)
       .populate('sender', 'name profileImage')
-      .populate('relatedRecipe', 'title images')
+      .populate('data.recipeId', 'title images')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -223,7 +223,7 @@ router.post('/send', auth, [
       });
     }
 
-    const { recipient, type, title, message, relatedRecipe, data } = req.body;
+    const { recipient, type, title, message, data } = req.body;
 
     const notification = new Notification({
       recipient,
@@ -231,7 +231,6 @@ router.post('/send', auth, [
       type,
       title,
       message,
-      relatedRecipe,
       data
     });
 

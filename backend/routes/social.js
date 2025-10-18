@@ -192,9 +192,7 @@ router.get('/feed', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     const followingIds = user.following;
 
-    // Include user's own recipes in feed
-    followingIds.push(req.user._id);
-
+    // Only show recipes from users you follow, not your own
     const recipes = await Recipe.find({
       creator: { $in: followingIds },
       isPublished: true
